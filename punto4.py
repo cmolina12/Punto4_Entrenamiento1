@@ -220,45 +220,93 @@ x = lp.LpVariable.dicts('CompraProveedor', (semanas, cables), lowBound=0, cat='C
 y = lp.LpVariable.dicts('CompraTercero', (semanas, cables), lowBound=0, cat='Continuous')
 inventario_final_semana = lp.LpVariable.dicts('InventarioFinal', (semanas, cables), lowBound=0, cat='Continuous')
 
+# Función objetivo
+modelo += lp.lpSum((costo_compra[(t, c)] * x[t][c]) + (costo_tercero[c] * y[t][c]) + (costo_inventario * inventario_final_semana[t][c]) for c in cables for t in semanas)
+
 # Restricciones
 
-# Flujo de inventario y requerimiento mínimo (excluyendo semana 14 para el mínimo)
-for cable in cables:
-    for semana in semanas:
-        if semana == 1:
-            modelo += inventario_final_semana[semana][cable] == inventario_inicial[cable] + x[semana][cable] - requerimiento[(semana, cable)]
-        if semana == 2:
-            modelo += inventario_final_semana[semana][cable] == inventario_final_semana[semana-1][cable] + x[semana][cable] - requerimiento[(semana, cable)]
-        if semana > 2:
-            y_comp = y[semana-2][cable] 
-            modelo += inventario_final_semana[semana][cable] == inventario_final_semana[semana-1][cable] + x[semana][cable] + y_comp - requerimiento[(semana, cable)]
-        if semana != 14:  
-            modelo += inventario_final_semana[semana][cable] >= inventario_minimo[cable]
-        if semana == 14:
-            modelo += inventario_final_semana[semana][cable] >= 0
-            
-# Capacidad de compra
-for semana in semanas:
-    for cable in cables:
-        modelo += x[semana][cable] <= capacidad_compra[cable]
+# Flujo de inventario para la semana 1
+for c in cables:
+    modelo += inventario_final_semana[1][c] == inventario_inicial[c] + x[1][c] - requerimiento[(1, c)]
 
-# Capacidad de la bodega (total, no por cable)
-for semana in semanas:
-    modelo += lp.lpSum(inventario_final_semana[semana][cable] for cable in cables) <= capacidad_bodega
+# Flujo de inventario para la semana 2 en adelante
+for c in cables:
+    for t in semanas:  # Empezando desde la semana 2 hasta la 14
+        if t == 2:
+            modelo += inventario_final_semana[t][c] == inventario_final_semana[t-1][c] + x[t][c] - requerimiento[(t, c)]
+        elif t > 2:
+            # Agregando compras al tercero con retraso de dos semanas
+            modelo += inventario_final_semana[t][c] == inventario_final_semana[t-1][c] + x[t][c] + y[t-2][c] - requerimiento[(t, c)]
 
-# Presupuesto de almacenamiento (total a lo largo del horizonte de planificación)
-modelo += costo_inventario * lp.lpSum(inventario_final_semana[semana][cable] for semana in semanas for cable in cables) <= presupuesto
+# Mantener inventario mínimo para todas las semanas excepto la 14
+for c in cables:
+    for t in semanas:
+        if t != 14: # Excluye la última semana
+            modelo += inventario_final_semana[t][c] >= inventario_minimo[c]
 
-# Función objetivo (minimizar costos de compra y almacenamiento)
-costo_total = lp.lpSum(costo_compra[(semana, cable)] * x[semana][cable]  + costo_tercero[cable] * y[semana][cable]  + costo_inventario * inventario_final_semana[semana][cable] for semana in semanas for cable in cables)
-modelo += costo_total
+# Capacidad máxima de compra semanal del proveedor
+for c in cables:
+    for t in semanas:
+        modelo += x[t][c] <= capacidad_compra[c]
+
+# Capacidad total de la bodega
+for t in semanas:
+    modelo += lp.lpSum(inventario_final_semana[t][c] for c in cables) <= capacidad_bodega
+
+# Presupuesto total para almacenamiento
+modelo += lp.lpSum(costo_inventario * inventario_final_semana[t][c] for c in cables for t in semanas) <= presupuesto
 
 # Resolver el modelo
 modelo.solve()
 
-# Mostrar estado de la solución y costo total
+# Verificar el estado del modelo y mostrar los resultados
 print("Estado de la solución:", lp.LpStatus[modelo.status])
 print("Costo total optimizado: $", lp.value(modelo.objective))
-print("Gastos de almacenamiento: $", lp.value(lp.lpSum(costo_inventario * inventario_final_semana[semana][cable].varValue for semana in semanas for cable in cables)))
 
-#fsdfd
+# Mostrar decisiones de compra y niveles de inventario
+for c in cables:
+    for t in semanas:
+        print(f"Semana {t}, Cable {c}: Compra Proveedor = {x[t][c].value()}, Compra Tercero = {y[t][c].value()}, Inventario Final = {inventario_final_semana[t][c].value()}")
+        
+#Graficas
+
+# Graficar las decisiones de compra
+
+fig, ax = plt.subplots(3, 1, figsize=(10, 15))
+
+plt.subplots_adjust(hspace=0.5)
+for i, c in enumerate(cables):
+    compras_proveedor = [x[t][c].value() for t in semanas]
+    compras_tercero = [y[t][c].value() for t in semanas]
+    ax[i].plot(semanas, compras_proveedor, label='Compra Proveedor', marker='o')
+    ax[i].plot(semanas, compras_tercero, label='Compra Tercero', marker='x')
+    ax[i].set_xlabel('Semanas')
+    ax[i].set_ylabel('Cantidad')
+    ax[i].set_title(f'Compras de {c}')
+    ax[i].legend()
+plt.show()
+
+# Graficar los niveles de inventario
+
+fig, ax = plt.subplots(3, 1, figsize=(10, 15))
+
+plt.subplots_adjust(hspace=0.5)
+for i, c in enumerate(cables):
+    inventario = [inventario_final_semana[t][c].value() for t in semanas]
+    ax[i].plot(semanas, inventario, label='Inventario Final', marker='o')
+    ax[i].set_xlabel('Semanas')
+    ax[i].set_ylabel('Cantidad')
+    ax[i].set_title(f'Inventario de {c}')
+    ax[i].legend()
+plt.show()
+
+# Graficar el costo total a lo largo del tiempo
+
+for t in semanas:
+    costo_total = lp.value(lp.lpSum((costo_compra[(t, c)] * x[t][c]) + (costo_tercero[c] * y[t][c]) + (costo_inventario * inventario_final_semana[t][c]) for c in cables))
+    plt.plot(t, costo_total, marker='o', color='b')
+    plt.xlabel('Semanas')
+    plt.ylabel('Costo total')
+    plt.title('Costo total a lo largo del tiempo')
+plt.show()
+
