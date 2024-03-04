@@ -221,7 +221,7 @@ y = lp.LpVariable.dicts('CompraTercero', (semanas, cables), lowBound=0, cat='Con
 inventario_final_semana = lp.LpVariable.dicts('InventarioFinal', (semanas, cables), lowBound=0, cat='Continuous')
 
 # Función objetivo
-modelo += lp.lpSum((costo_compra[(t, c)] * x[t][c]) + (costo_tercero[c] * y[t][c]) + (costo_inventario * inventario_final_semana[t][c]) for c in cables for t in semanas)
+modelo += lp.lpSum((costo_compra[(t, c)] * x[t][c]) + (costo_tercero[c] * y[t][c])  for c in cables for t in semanas)
 
 # Restricciones
 
