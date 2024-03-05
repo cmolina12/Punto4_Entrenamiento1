@@ -1,3 +1,5 @@
+#c.molinap
+#ca.perezc1
 
 import pulp as lp
 import matplotlib.pyplot as plt
